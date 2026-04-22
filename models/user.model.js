@@ -32,12 +32,10 @@ const userSchema = new mongoose.Schema({
     },
     avatar: {
         public_id: {
-            type: String,
-            required: true
+            type: String
         },
         url: {
-            type: String,
-            required: true
+            type: String
         }
     },
     status: {
@@ -46,9 +44,15 @@ const userSchema = new mongoose.Schema({
         default: 'active'
     },
     branch: {
-        type: String,
-        default: 'Main Branch'
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
     },
+    assignedRole: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Role'
+    },
+    permissions: [String], 
     lastLogin: Date,
     resetPasswordToken: String,
     resetPasswordExpire: Date
@@ -66,9 +70,11 @@ userSchema.methods.comparePassword = async function (password) {
 };
 
 userSchema.methods.getJWTToken = function () {
-    return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRE,
-    });
+    return jwt.sign(
+        { id: this._id, role: this.role, branch: this.branch }, 
+        process.env.JWT_SECRET, 
+        { expiresIn: process.env.JWT_EXPIRE }
+    );
 };
 
 userSchema.methods.getResetPasswordToken = function () {

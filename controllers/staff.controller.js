@@ -4,6 +4,8 @@ import User from "../models/user.model.js";
 import ErrorHandler from "../utils/ErrorHandler.js";
 import CloudinaryService from "../utils/CloudinaryService.js";
 import { sendResponse } from "../utils/sendResponse.js";
+import { getCache, setCache, deleteByPrefix } from "../utils/redis.js";
+import { createNotification } from "../utils/notifier.js";
 
 /**
  * Onboard a new Staff member (Faculty/Admin/Accountant)
@@ -32,7 +34,8 @@ export const onboardStaff = catchAsyncErrors(async (req, res, next) => {
         password,
         role: role || 'staff',
         phone,
-        avatar
+        avatar,
+        branch: req.body.branch || req.user.branch
     });
 
     // 2. Create Staff Profile
@@ -41,7 +44,23 @@ export const onboardStaff = catchAsyncErrors(async (req, res, next) => {
         employeeId: `EMP-${Date.now()}`,
         designation,
         department,
-        salary: salary ? JSON.parse(salary) : { base: 0, allowances: 0 }
+        salary: salary ? JSON.parse(salary) : { base: 0, allowances: 0 },
+        branch: req.body.branch || req.user.branch
+    });
+
+    // Invalidate Cache
+    await deleteByPrefix(`staff:${staff.branch}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Staff Onboarded",
+        message: `${user.name} joined as ${staff.designation} in ${staff.department}.`,
+        type: "Activity",
+        resource: "Staff",
+        resourceId: staff._id,
+        action: "create",
+        branch: staff.branch
     });
 
     sendResponse(res, 201, "Staff onboarded successfully", { user, staff });
@@ -51,7 +70,15 @@ export const onboardStaff = catchAsyncErrors(async (req, res, next) => {
  * Get list of all staff members
  */
 export const getStaffList = catchAsyncErrors(async (req, res, next) => {
-    const staffList = await Staff.find().populate("user", "name email phone role status");
+    const branch = req.query.branch || req.user.branch;
+
+    const cacheKey = `staff:${branch}:${JSON.stringify(req.query)}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.status(200).json({ success: true, count: cached.length, staff: cached, fromCache: true });
+
+    const staffList = await Staff.find({ branch }).populate("user", "name email phone role status");
+
+    await setCache(cacheKey, staffList, 3600);
 
     res.status(200).json({
         success: true,
@@ -71,6 +98,21 @@ export const updateStaffSalary = catchAsyncErrors(async (req, res, next) => {
 
     if (!staff) return next(new ErrorHandler("Staff record not found", 404));
 
+    // Invalidate Cache
+    await deleteByPrefix(`staff:${staff.branch}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Staff Info Updated",
+        message: `Salary/Details updated for staff of branch.`,
+        type: "Activity",
+        resource: "Staff",
+        resourceId: staff._id,
+        action: "update",
+        branch: staff.branch
+    });
+
     sendResponse(res, 200, "Staff details updated", staff);
 });
 
@@ -88,8 +130,12 @@ export const deleteStaff = catchAsyncErrors(async (req, res, next) => {
         await CloudinaryService.deleteFile(user.avatar.public_id);
     }
 
+    const branchId = staff.branch;
     await staff.deleteOne();
     if (user) await user.deleteOne();
+
+    // Invalidate Cache
+    await deleteByPrefix(`staff:${branchId}`);
 
     sendResponse(res, 200, "Staff record deleted successfully");
 });

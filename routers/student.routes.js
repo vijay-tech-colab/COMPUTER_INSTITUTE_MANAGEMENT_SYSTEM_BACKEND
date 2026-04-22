@@ -5,16 +5,17 @@ import {
     updateStudentInfo, 
     deleteStudent 
 } from '../controllers/student.controller.js';
-import { isAuthenticated, authorizeRoles } from '../middlewares/auth.middleware.js';
+import { isAuthenticated } from '../middlewares/auth.middleware.js';
+import { checkPermission } from '../middlewares/rbac.middleware.js';
 
 const router = express.Router();
 
 router.route('/')
-    .get(isAuthenticated, authorizeRoles('admin', 'staff'), getAllStudents);
+    .get(isAuthenticated, checkPermission('student', 'list'), getAllStudents);
 
 router.route('/:id')
-    .get(isAuthenticated, getStudentById)
-    .put(isAuthenticated, authorizeRoles('admin'), updateStudentInfo)
-    .delete(isAuthenticated, authorizeRoles('admin'), deleteStudent);
+    .get(isAuthenticated, checkPermission('student', 'view'), getStudentById)
+    .put(isAuthenticated, checkPermission('student', 'update'), updateStudentInfo)
+    .delete(isAuthenticated, checkPermission('student', 'delete'), deleteStudent);
 
 export default router;

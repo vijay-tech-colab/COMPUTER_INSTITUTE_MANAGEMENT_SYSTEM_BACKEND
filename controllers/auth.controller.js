@@ -4,6 +4,8 @@ import ErrorHandler from "../utils/ErrorHandler.js";
 import CloudinaryService from "../utils/CloudinaryService.js";
 import { sendEmail } from "../services/email/sendEmail.js";
 import { sendToken } from "../utils/sendResponse.js";
+import { getCache, setCache, deleteCache } from "../utils/redis.js";
+import { createNotification } from "../utils/notifier.js";
 
 /**
  * Register a new user
@@ -11,28 +13,32 @@ import { sendToken } from "../utils/sendResponse.js";
 export const registerUser = catchAsyncErrors(async (req, res, next) => {
     const { name, email, password, role, phone, branch } = req.body;
 
-    if (!req.files || !req.files.avatar) {
-        return next(new ErrorHandler("Please upload an avatar", 400));
-    }
+    let avatar = {
+        public_id: "default_avatar",
+        url: "https://res.cloudinary.com/dmpp9it7f/image/upload/v1713426742/cims/avatars/default_profile_k7qpxq.png"
+    };
 
-    // 1. Upload Avatar to Cloudinary
-    const myCloud = await CloudinaryService.uploadFile(
-        req.files.avatar.tempFilePath,
-        "cims/avatars"
-    );
+    // 1. Upload Avatar to Cloudinary only if provided
+    if (req.files && req.files.avatar) {
+        const myCloud = await CloudinaryService.uploadFile(
+            req.files.avatar.tempFilePath,
+            "cims/avatars"
+        );
+        avatar = {
+            public_id: myCloud.public_id,
+            url: myCloud.url,
+        };
+    }
 
     // 2. Create User
     const user = await User.create({
         name,
         email,
         password,
-        role,
+        role: role || 'student',
         phone,
-        branch,
-        avatar: {
-            public_id: myCloud.public_id,
-            url: myCloud.url,
-        },
+        branch: branch || (req.user ? req.user.branch : null),
+        avatar
     });
 
     // 3. Send Welcome Email (Optional but recommended)
@@ -98,7 +104,13 @@ export const logoutUser = catchAsyncErrors(async (req, res, next) => {
  * Get Current User Profile
  */
 export const getUserDetails = catchAsyncErrors(async (req, res, next) => {
+    const cacheKey = `user:${req.user.id}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.status(200).json({ success: true, user: cached, fromCache: true });
+
     const user = await User.findById(req.user.id);
+
+    await setCache(cacheKey, user, 3600); // 1 hour
 
     res.status(200).json({
         success: true,
@@ -110,12 +122,11 @@ export const getUserDetails = catchAsyncErrors(async (req, res, next) => {
  * Update Profile Details & Avatar
  */
 export const updateProfile = catchAsyncErrors(async (req, res, next) => {
-    const newData = {
-        name: req.body.name,
-        email: req.body.email,
-        phone: req.body.phone,
-        branch: req.body.branch,
-    };
+    const newData = {};
+    if (req.body.name) newData.name = req.body.name;
+    if (req.body.email) newData.email = req.body.email;
+    if (req.body.phone) newData.phone = req.body.phone;
+    if (req.body.branch) newData.branch = req.body.branch;
 
     // Update Avatar if file is provided
     if (req.files && req.files.avatar) {
@@ -124,7 +135,7 @@ export const updateProfile = catchAsyncErrors(async (req, res, next) => {
         const myCloud = await CloudinaryService.uploadFile(
             req.files.avatar.tempFilePath,
             "cims/avatars",
-            user.avatar.public_id // Deletes old photo
+            user.avatar?.public_id !== "default_avatar" ? user.avatar?.public_id : undefined
         );
 
         newData.avatar = {
@@ -139,9 +150,62 @@ export const updateProfile = catchAsyncErrors(async (req, res, next) => {
         useFindAndModify: false,
     });
 
+    // Invalidate Cache
+    await deleteCache(`user:${req.user.id}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Profile Updated",
+        message: `${user.name} updated their profile information.`,
+        type: "Activity",
+        resource: "User",
+        resourceId: user._id,
+        action: "update",
+        branch: user.branch
+    });
+
     res.status(200).json({
         success: true,
         message: "Profile updated successfully",
         user,
+    });
+});
+
+/**
+ * Manage User Permissions (Admin Only)
+ */
+export const manageUserPermissions = catchAsyncErrors(async (req, res, next) => {
+    const { userId, permissions } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+        userId,
+        { permissions },
+        { new: true, runValidators: true }
+    );
+
+    if (!user) {
+        return next(new ErrorHandler("User not found", 404));
+    }
+
+    // Invalidate Cache for this user
+    await deleteCache(`user:${userId}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Permissions Modified",
+        message: `Administrative permissions were updated for ${user.name}.`,
+        type: "Activity",
+        resource: "User",
+        resourceId: user._id,
+        action: "update",
+        branch: user.branch
+    });
+
+    res.status(200).json({
+        success: true,
+        message: "Permissions updated successfully",
+        user
     });
 });

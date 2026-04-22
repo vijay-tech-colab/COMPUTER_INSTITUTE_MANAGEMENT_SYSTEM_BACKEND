@@ -15,7 +15,12 @@ const resultSchema = new mongoose.Schema({
     percentage: Number,
     grade: String,
     status: { type: String, enum: ['Pass', 'Fail'], default: 'Pass' },
-    remarks: String
+    remarks: String,
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
+    }
 }, {
     timestamps: true
 });

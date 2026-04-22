@@ -2,6 +2,9 @@ import dotenv from "dotenv";
 import app from "./app.js";
 import connectDB from "./db/index.js";
 import { v2 as cloudinary } from "cloudinary";
+import connectRabbitMQ from "./utils/rabbitmq.js";
+import { createServer } from "http";
+import { initSocket } from "./utils/socket.js";
 
 // Configure Dotenv
 dotenv.config();
@@ -23,8 +26,14 @@ process.on("uncaughtException", (err) => {
 // Connect to Database and start server
 connectDB()
     .then(() => {
-        const server = app.listen(process.env.PORT || 9000, () => {
+        const httpServer = createServer(app);
+
+        // Initialize Socket.io
+        initSocket(httpServer);
+
+        const server = httpServer.listen(process.env.PORT || 9000, async () => {
             console.log(`🚀 Server is running at port : ${process.env.PORT || 9000}`);
+            await connectRabbitMQ();
         });
 
         // Handling Unhandled Promise Rejection

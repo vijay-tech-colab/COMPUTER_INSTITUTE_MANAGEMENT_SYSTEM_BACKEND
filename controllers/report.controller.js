@@ -16,8 +16,9 @@ import { generateStudentsExcel } from "../reports/excel/studentsReport.js";
 export const generateFeeReceipt = catchAsyncErrors(async (req, res, next) => {
     const { feeId, paymentId } = req.params;
 
-    const fee = await Fee.findById(feeId).populate("student").populate("course");
-    if (!fee) return next(new ErrorHandler("Fee record not found", 404));
+    const branch = req.query.branch || req.user.branch;
+    const fee = await Fee.findOne({ _id: feeId, branch }).populate("student").populate("course");
+    if (!fee) return next(new ErrorHandler("Fee record not found in this branch", 404));
 
     const payment = fee.payments.id(paymentId);
     if (!payment) return next(new ErrorHandler("Payment record not found", 404));
@@ -33,8 +34,9 @@ export const generateFeeReceipt = catchAsyncErrors(async (req, res, next) => {
  * Generate Admission Form PDF
  */
 export const generateAdmissionReport = catchAsyncErrors(async (req, res, next) => {
-    const admission = await Admission.findById(req.params.id);
-    if (!admission) return next(new ErrorHandler("Admission record not found", 404));
+    const branch = req.query.branch || req.user.branch;
+    const admission = await Admission.findOne({ _id: req.params.id, branch });
+    if (!admission) return next(new ErrorHandler("Admission record not found in this branch", 404));
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename=admission_${admission._id}.pdf`);
@@ -47,7 +49,8 @@ export const generateAdmissionReport = catchAsyncErrors(async (req, res, next) =
  * Export all students to Excel
  */
 export const exportStudentsExcel = catchAsyncErrors(async (req, res, next) => {
-    const students = await Student.find().populate("user", "name email phone");
+    const branch = req.query.branch || req.user.branch;
+    const students = await Student.find({ branch }).populate("user", "name email phone");
 
     const data = students.map(s => ({
         RegNo: s.registrationNo,

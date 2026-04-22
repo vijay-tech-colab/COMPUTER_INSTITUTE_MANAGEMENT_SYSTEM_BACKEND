@@ -33,6 +33,11 @@ const batchSchema = new mongoose.Schema({
         type: String,
         enum: ['upcoming', 'ongoing', 'completed'],
         default: 'upcoming'
+    },
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
     }
 }, {
     timestamps: true

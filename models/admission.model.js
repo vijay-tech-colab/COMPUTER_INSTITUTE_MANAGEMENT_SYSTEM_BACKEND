@@ -44,6 +44,11 @@ const admissionSchema = new mongoose.Schema({
     enrolledStudent: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
+    },
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
     }
 }, {
     timestamps: true

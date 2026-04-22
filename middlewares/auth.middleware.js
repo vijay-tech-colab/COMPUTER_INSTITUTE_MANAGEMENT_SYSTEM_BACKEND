@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.model.js';
+import { getCache, setCache } from '../utils/redis.js';
 
 export const isAuthenticated = async (req, res, next) => {
     try {
@@ -10,11 +11,28 @@ export const isAuthenticated = async (req, res, next) => {
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key');
-        req.user = await User.findById(decoded.id);
+        
+        // Try to get user from Redis
+        const cacheKey = `user:${decoded.id}`;
+        let user = await getCache(cacheKey);
 
-        if (!req.user) {
+        if (!user) {
+            user = await User.findById(decoded.id).populate({
+                path: 'assignedRole',
+                populate: {
+                    path: 'permissions.permission'
+                }
+            });
+            if (user) {
+                await setCache(cacheKey, user, 3600); // Cache for 1 hour
+            }
+        }
+
+        if (!user) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
+
+        req.user = user;
 
         next();
     } catch (error) {

@@ -21,6 +21,8 @@ import bookRoutes from "./routers/book.routes.js";
 import paymentRoutes from "./routers/payment.routes.js";
 import dashboardRoutes from "./routers/dashboard.routes.js";
 import reportRoutes from "./routers/report.routes.js";
+import branchRoutes from "./routers/branch.routes.js";
+import roleRoutes from "./routers/role.routes.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
 
 
@@ -64,6 +66,8 @@ app.use("/api/v1/books", bookRoutes);
 app.use("/api/v1/payment", paymentRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/reports", reportRoutes);
+app.use("/api/v1/branch", branchRoutes);
+app.use("/api/v1/roles", roleRoutes);
 
 
 

@@ -51,8 +51,8 @@ const bookSchema = new mongoose.Schema({
         trim: true
     },
     coverImage: {
-        public_id: { type: String, required: true },
-        url: { type: String, required: true }
+        public_id: { type: String },
+        url: { type: String }
     },
     purchaseDate: Date,
     status: {
@@ -67,6 +67,11 @@ const bookSchema = new mongoose.Schema({
     ebookUrl: {
         public_id: String,
         url: String
+    },
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
     }
 }, {
     timestamps: true

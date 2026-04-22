@@ -10,41 +10,61 @@ import Exam from "../models/exam.model.js";
 import Result from "../models/result.model.js";
 import Notification from "../models/notification.model.js";
 import Book from "../models/book.model.js";
+import { getCache, setCache } from "../utils/redis.js";
 
 // ================= ADMIN DASHBOARD WIDGETS =================
 
 export const getAdminStudentStats = catchAsyncErrors(async (req, res, next) => {
-    const total = await Student.countDocuments();
-    const active = await Student.countDocuments({ status: "active" });
-    res.status(200).json({ success: true, total, active });
+    const branch = req.query.branch || req.user.branch;
+    const cacheKey = `stats:students:${branch}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.status(200).json({ success: true, ...cached, fromCache: true });
+
+    const total = await Student.countDocuments({ branch });
+    const active = await Student.countDocuments({ status: "active", branch });
+    
+    const data = { total, active };
+    await setCache(cacheKey, data, 900); // 15 mins
+
+    res.status(200).json({ success: true, ...data });
 });
 
 export const getAdminFinancialStats = catchAsyncErrors(async (req, res, next) => {
-    const feeRecords = await Fee.find({}, "totalAmount paidAmount");
+    const branch = req.query.branch || req.user.branch;
+    const cacheKey = `stats:finance:${branch}`;
+    const cached = await getCache(cacheKey);
+    if (cached) return res.status(200).json({ success: true, ...cached, fromCache: true });
+
+    const feeRecords = await Fee.find({ branch }, "totalAmount paidAmount");
     const stats = feeRecords.reduce((acc, curr) => {
         acc.totalExpected += curr.totalAmount;
         acc.totalCollected += curr.paidAmount;
         return acc;
     }, { totalExpected: 0, totalCollected: 0 });
 
-    res.status(200).json({
-        success: true,
+    const data = {
         totalExpected: stats.totalExpected,
         totalCollected: stats.totalCollected,
         outstanding: stats.totalExpected - stats.totalCollected
-    });
+    };
+
+    await setCache(cacheKey, data, 900); // 15 mins
+
+    res.status(200).json({ success: true, ...data });
 });
 
 export const getAdminAdmissionStats = catchAsyncErrors(async (req, res, next) => {
-    const totalEnquiries = await Admission.countDocuments({ status: "Enquiry" });
-    const recent = await Admission.find().sort({ createdAt: -1 }).limit(5);
+    const branch = req.query.branch || req.user.branch;
+    const totalEnquiries = await Admission.countDocuments({ status: "Enquiry", branch });
+    const recent = await Admission.find({ branch }).sort({ createdAt: -1 }).limit(5);
     res.status(200).json({ success: true, totalEnquiries, recent });
 });
 
 export const getAdminCourseDistribution = catchAsyncErrors(async (req, res, next) => {
-    const courses = await Course.find({}, "name");
+    const branch = req.query.branch || req.user.branch;
+    const courses = await Course.find({ branch }, "name");
     const distribution = await Promise.all(courses.map(async (course) => {
-        const studentCount = await Student.countDocuments({ enrolledCourses: course._id });
+        const studentCount = await Student.countDocuments({ enrolledCourses: course._id, branch });
         return { name: course.name, studentCount };
     }));
     res.status(200).json({ success: true, distribution });
@@ -105,9 +125,8 @@ export const getStudentNotifications = catchAsyncErrors(async (req, res, next) =
 });
 
 export const getStudentLibrarySummary = catchAsyncErrors(async (req, res, next) => {
-    // Books borrowed logic could be here if we had a Borrow model, 
-    // for now let's just show total available books as a placeholder or empty list
-    const availableBooks = await Book.countDocuments({ status: "Available" });
+    const branch = req.query.branch || req.user.branch;
+    const availableBooks = await Book.countDocuments({ status: "Available", branch });
     res.status(200).json({ success: true, availableBooks });
 });
 

@@ -7,7 +7,12 @@ const examSchema = new mongoose.Schema({
     date: Date,
     maxMarks: { type: Number, required: true },
     passingMarks: { type: Number, required: true },
-    examType: { type: String, enum: ['Internal', 'Final', 'Quiz'], default: 'Internal' }
+    examType: { type: String, enum: ['Internal', 'Final', 'Quiz'], default: 'Internal' },
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
+    }
 }, {
     timestamps: true
 });

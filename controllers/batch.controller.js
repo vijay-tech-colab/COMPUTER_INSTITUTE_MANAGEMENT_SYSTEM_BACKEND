@@ -4,12 +4,30 @@ import Student from "../models/student.model.js";
 import ErrorHandler from "../utils/ErrorHandler.js";
 import { sendResponse } from "../utils/sendResponse.js";
 import ApiFeatures from "../utils/ApiFeatures.js";
+import { getCache, setCache, deleteByPrefix } from "../utils/redis.js";
+import { createNotification } from "../utils/notifier.js";
 
 /**
  * Create a new academic batch
  */
 export const createBatch = catchAsyncErrors(async (req, res, next) => {
+    if (!req.body.branch) req.body.branch = req.user.branch;
     const batch = await Batch.create(req.body);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "New Batch Created",
+        message: `Batch ${batch.name} was created for branch.`,
+        type: "Activity",
+        resource: "Batch",
+        resourceId: batch._id,
+        action: "create",
+        branch: batch.branch
+    });
+
+    // Invalidate Cache
+    await deleteByPrefix(`batches:${req.body.branch}`);
 
     sendResponse(res, 201, "Batch created successfully", batch);
 });
@@ -18,12 +36,19 @@ export const createBatch = catchAsyncErrors(async (req, res, next) => {
  * Get all batches with course and faculty population
  */
 export const getBatches = catchAsyncErrors(async (req, res, next) => {
+    const branch = req.query.branch || req.user.branch;
+    const cacheKey = `batches:${branch}:${JSON.stringify(req.query)}`;
+    const cached = await getCache(cacheKey);
+
+    if (cached) return res.status(200).json({ success: true, count: cached.length, batches: cached, fromCache: true });
+
     const apiFeature = new ApiFeatures(
-        Batch.find().populate("course").populate("faculty", "name email phone"),
+        Batch.find({ branch }).populate("course").populate("faculty", "name email phone"),
         req.query
     ).filter();
 
     const batches = await apiFeature.query;
+    await setCache(cacheKey, batches, 3600);
 
     res.status(200).json({
         success: true,
@@ -61,6 +86,21 @@ export const addStudentToBatch = catchAsyncErrors(async (req, res, next) => {
     student.currentBatch = batchId;
     await student.save();
 
+    // Invalidate Cache
+    await deleteByPrefix(`batches:${batch.branch}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Student Assigned to Batch",
+        message: `A student was added to batch ${batch.name}.`,
+        type: "Activity",
+        resource: "Batch",
+        resourceId: batch._id,
+        action: "update",
+        branch: batch.branch
+    });
+
     sendResponse(res, 200, "Student assigned to batch successfully");
 });
 
@@ -76,6 +116,9 @@ export const updateBatch = catchAsyncErrors(async (req, res, next) => {
     if (!batch) {
         return next(new ErrorHandler("Batch not found", 404));
     }
+
+    // Invalidate Cache
+    await deleteByPrefix(`batches:${batch.branch}`);
 
     sendResponse(res, 200, "Batch updated successfully", batch);
 });

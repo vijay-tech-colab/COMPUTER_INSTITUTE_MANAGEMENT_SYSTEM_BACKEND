@@ -28,6 +28,11 @@ const staffSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true
+    },
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
     }
 }, {
     timestamps: true

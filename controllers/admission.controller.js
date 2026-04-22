@@ -5,9 +5,40 @@ import Student from "../models/student.model.js";
 import ErrorHandler from "../utils/ErrorHandler.js";
 import CloudinaryService from "../utils/CloudinaryService.js";
 import { sendResponse } from "../utils/sendResponse.js";
+import { getCache, setCache, deleteByPrefix } from "../utils/redis.js";
 import { sendEmail } from "../services/email/sendEmail.js";
 import { createNotification } from "../utils/notifier.js";
+import { generateRegistrationNo } from "../utils/idGenerator.js";
 import mongoose from "mongoose";
+
+/**
+ * Get all admissions with branch filtering
+ */
+export const getAdmissions = catchAsyncErrors(async (req, res, next) => {
+    const branch = req.query.branch || req.user.branch;
+
+    const cacheKey = `admissions:${branch}`;
+    const cachedAdmissions = await getCache(cacheKey);
+
+    if (cachedAdmissions) {
+        return res.status(200).json({
+            success: true,
+            count: cachedAdmissions.length,
+            admissions: cachedAdmissions,
+            fromCache: true
+        });
+    }
+
+    const admissions = await Admission.find({ branch }).populate("interestedCourse", "name code");
+
+    await setCache(cacheKey, admissions, 1800); // 30 mins
+
+    res.status(200).json({
+        success: true,
+        count: admissions.length,
+        admissions
+    });
+});
 
 /**
  * Handle new admission enquiry/application
@@ -18,7 +49,7 @@ export const newEnquiry = catchAsyncErrors(async (req, res, next) => {
     // Handle multiple document uploads if provided
     if (req.files && req.files.docs) {
         const files = Array.isArray(req.files.docs) ? req.files.docs : [req.files.docs];
-        
+
         for (const file of files) {
             const myCloud = await CloudinaryService.uploadFile(file.tempFilePath, "cims/admissions");
             documents.push({
@@ -34,6 +65,22 @@ export const newEnquiry = catchAsyncErrors(async (req, res, next) => {
         documents
     });
 
+    // Invalidate Cache
+    await deleteByPrefix(`admissions:${admission.branch}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        sender: req.body.email ? undefined : req.user?._id, // If public enquiry, no sender
+        title: "New Admission Enquiry",
+        message: `New admission request from ${admission.fullName} for ${admission.branch}.`,
+        type: "Activity",
+        resource: "Admission",
+        resourceId: admission._id,
+        action: "create",
+        branch: admission.branch
+    });
+
     sendResponse(res, 201, "Enquiry submitted successfully", admission);
 });
 
@@ -42,7 +89,7 @@ export const newEnquiry = catchAsyncErrors(async (req, res, next) => {
  */
 export const updateAdmissionStatus = catchAsyncErrors(async (req, res, next) => {
     const { status, remarks } = req.body;
-    
+
     const admission = await Admission.findByIdAndUpdate(
         req.params.id,
         { status, remarks },
@@ -52,6 +99,21 @@ export const updateAdmissionStatus = catchAsyncErrors(async (req, res, next) => 
     if (!admission) {
         return next(new ErrorHandler("Admission record not found", 404));
     }
+
+    // Invalidate Cache
+    await deleteByPrefix(`admissions:${admission.branch}`);
+
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Admission Status Updated",
+        message: `Application for ${admission.fullName} is now ${status}.`,
+        type: "Activity",
+        resource: "Admission",
+        resourceId: admission._id,
+        action: "update",
+        branch: admission.branch
+    });
 
     sendResponse(res, 200, `Status updated to ${status}`, admission);
 });
@@ -79,6 +141,7 @@ export const convertToStudent = catchAsyncErrors(async (req, res, next) => {
         password: defaultPassword,
         role: "student",
         phone: admission.phone,
+        branch: admission.branch,
         avatar: admission.documents[0] ? { // Use first doc as temporary avatar if exists
             public_id: admission.documents[0].public_id,
             url: admission.documents[0].url
@@ -86,23 +149,25 @@ export const convertToStudent = catchAsyncErrors(async (req, res, next) => {
     });
 
     // 2. Create Student profile record
+    const registrationNo = await generateRegistrationNo(admission.branch);
+
     const student = await Student.create({
         user: user._id,
-        registrationNo: `STU-${Date.now()}`,
+        registrationNo,
         dob: admission.dateOfBirth,
         address: { current: admission.address },
         guardian: { name: admission.guardianName },
         enrolledCourses: [admission.interestedCourse],
-    });
-
-    // 3. Initialize Fee Structure for the student
+        branch: admission.branch,
+    });// 3. Initialize Fee Structure for the student
     const course = await mongoose.model("Course").findById(admission.interestedCourse);
     if (course) {
         await mongoose.model("Fee").create({
             student: user._id,
             course: course._id,
             totalAmount: course.feeStructure.totalFee,
-            status: "Pending"
+            status: "Pending",
+            branch: admission.branch
         });
     }
 
@@ -124,11 +189,11 @@ export const convertToStudent = catchAsyncErrors(async (req, res, next) => {
                 url: `${process.env.FRONTEND_URL}/login`
             }
         });
-        
+
         // In-app Notification
         await createNotification(
-            user._id, 
-            "Admission Confirmed!", 
+            user._id,
+            "Admission Confirmed!",
             "Welcome to CIMS! Your student portal is now active.",
             "General"
         );

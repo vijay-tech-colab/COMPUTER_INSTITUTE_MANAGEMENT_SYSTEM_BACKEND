@@ -33,6 +33,11 @@ const feeSchema = new mongoose.Schema({
         type: String,
         enum: ['Pending', 'Partial', 'Paid', 'Overdue'],
         default: 'Pending'
+    },
+    branch: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Branch',
+        required: true
     }
 }, {
     timestamps: true
