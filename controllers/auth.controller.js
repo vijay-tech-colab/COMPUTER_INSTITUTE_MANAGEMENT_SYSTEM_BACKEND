@@ -11,7 +11,13 @@ import { createNotification } from "../utils/notifier.js";
  * Register a new user
  */
 export const registerUser = catchAsyncErrors(async (req, res, next) => {
-    const { name, email, password, role, phone, branch } = req.body;
+    const { name, email, password, role, assignedRole, phone, branch } = req.body;
+
+    // Multi-tenant check: Non-superadmins can only register users for their own branch
+    const finalBranch = branch || (req.user ? req.user.branch : null);
+    if (req.user && req.user.role !== 'admin' && String(req.user.branch) !== String(finalBranch)) {
+        return next(new ErrorHandler("You can only register users for your own branch", 403));
+    }
 
     let avatar = {
         public_id: "default_avatar",
@@ -36,9 +42,22 @@ export const registerUser = catchAsyncErrors(async (req, res, next) => {
         email,
         password,
         role: role || 'student',
+        assignedRole, // New dynamic role support
         phone,
-        branch: branch || (req.user ? req.user.branch : null),
+        branch: finalBranch,
         avatar
+    });
+
+    // Activity Log
+    await createNotification({
+        sender: req.user?._id,
+        title: "New User Registered",
+        message: `${user.name} was registered as ${role || 'student'}.`,
+        type: "Activity",
+        resource: "User",
+        resourceId: user._id,
+        action: "create",
+        branch: finalBranch
     });
 
     // 3. Send Welcome Email (Optional but recommended)

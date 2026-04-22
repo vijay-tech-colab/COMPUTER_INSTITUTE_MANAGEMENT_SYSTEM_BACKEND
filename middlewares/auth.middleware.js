@@ -32,6 +32,11 @@ export const isAuthenticated = async (req, res, next) => {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
 
+        // Map dynamic role name to req.user.role if it exists
+        if (user.assignedRole && user.assignedRole.name) {
+            user.role = user.assignedRole.name;
+        }
+
         req.user = user;
 
         next();

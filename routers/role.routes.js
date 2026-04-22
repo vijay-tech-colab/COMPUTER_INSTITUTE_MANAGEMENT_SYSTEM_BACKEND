@@ -1,10 +1,11 @@
 import express from 'express';
-import { 
-    createRole, 
-    getRoles, 
-    updateRole, 
+import {
+    createRole,
+    getRoles,
+    updateRole,
     deleteRole,
-    getPermissionManifest
+    getPermissionManifest,
+    seedPermissions
 } from '../controllers/role.controller.js';
 import { isAuthenticated, authorizeRoles } from '../middlewares/auth.middleware.js';
 

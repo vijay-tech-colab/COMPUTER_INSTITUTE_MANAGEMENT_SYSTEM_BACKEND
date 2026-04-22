@@ -1,6 +1,5 @@
 import { sendEmail } from "../services/email/sendEmail.js";
 import { catchAsyncErrors } from "../utils/catchAsyncErrors.js";
-import { createNotification } from "../utils/notifier.js";
 import Fee from "../models/fee.model.js";
 import User from "../models/user.model.js";
 import ErrorHandler from "../utils/ErrorHandler.js";

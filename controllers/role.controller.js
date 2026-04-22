@@ -52,6 +52,18 @@ export const updateRole = catchAsyncErrors(async (req, res, next) => {
     // Clear caches for users having this role
     await deleteByPrefix('user:'); 
 
+    // Activity Log
+    await createNotification({
+        sender: req.user._id,
+        title: "Role Updated",
+        message: `Permissions for custom role '${role.name}' were modified.`,
+        type: "Activity",
+        resource: "Role",
+        resourceId: role._id,
+        action: "update",
+        branch: role.branch
+    });
+
     sendResponse(res, 200, "Role updated successfully", role);
 });
 
