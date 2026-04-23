@@ -1,5 +1,7 @@
+import mongoose from "mongoose";
 import { catchAsyncErrors } from "../utils/catchAsyncErrors.js";
 import User from "../models/user.model.js";
+import Branch from "../models/branch.model.js";
 import ErrorHandler from "../utils/ErrorHandler.js";
 import CloudinaryService from "../utils/CloudinaryService.js";
 import { sendEmail } from "../services/email/sendEmail.js";
@@ -14,7 +16,16 @@ export const registerUser = catchAsyncErrors(async (req, res, next) => {
     const { name, email, password, role, assignedRole, phone, branch } = req.body;
 
     // Multi-tenant check: Non-superadmins can only register users for their own branch
-    const finalBranch = branch || (req.user ? req.user.branch : null);
+    let finalBranch = branch || (req.user ? req.user.branch : null);
+
+    // Automatically find branch ID if a name/code is provided instead of an ID
+    if (finalBranch && !mongoose.Types.ObjectId.isValid(finalBranch)) {
+        const foundBranch = await Branch.findOne({ 
+            $or: [{ name: finalBranch }, { code: finalBranch }] 
+        });
+        if (foundBranch) finalBranch = foundBranch._id;
+    }
+
     if (req.user && req.user.role !== 'admin' && String(req.user.branch) !== String(finalBranch)) {
         return next(new ErrorHandler("You can only register users for your own branch", 403));
     }
@@ -123,17 +134,9 @@ export const logoutUser = catchAsyncErrors(async (req, res, next) => {
  * Get Current User Profile
  */
 export const getUserDetails = catchAsyncErrors(async (req, res, next) => {
-    const cacheKey = `user:${req.user.id}`;
-    const cached = await getCache(cacheKey);
-    if (cached) return res.status(200).json({ success: true, user: cached, fromCache: true });
-
-    const user = await User.findById(req.user.id);
-
-    await setCache(cacheKey, user, 3600); // 1 hour
-
     res.status(200).json({
         success: true,
-        user,
+        user: req.user,
     });
 });
 

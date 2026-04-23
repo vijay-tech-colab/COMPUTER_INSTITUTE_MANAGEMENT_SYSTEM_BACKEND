@@ -17,12 +17,14 @@ export const isAuthenticated = async (req, res, next) => {
         let user = await getCache(cacheKey);
 
         if (!user) {
-            user = await User.findById(decoded.id).populate({
-                path: 'assignedRole',
-                populate: {
-                    path: 'permissions.permission'
-                }
-            });
+            user = await User.findById(decoded.id)
+                .populate({
+                    path: 'assignedRole',
+                    populate: {
+                        path: 'permissions.permission'
+                    }
+                })
+                .populate('branch');
             if (user) {
                 await setCache(cacheKey, user, 3600); // Cache for 1 hour
             }
